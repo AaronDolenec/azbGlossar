@@ -12,25 +12,47 @@ const DRAIN_LIMIT = 1024 * 1024; // stop reading (and drop the socket) past this
 const TERM_URL = /^\/api\/terms\/([A-Za-z0-9_-]{1,64})$/;
 const WRITE_METHODS = new Set(['POST', 'PUT', 'DELETE']);
 const DEFAULT_INDEX = path.join(__dirname, '..', 'public', 'index.html');
+const DEFAULT_VENDOR_DIR = path.join(__dirname, '..', 'public', 'vendor');
 const DEFAULT_WRITE_LIMIT = { max: 30, windowMs: 60_000 };
+// Vendored files carry their version in the name, so they can be cached forever.
+const IMMUTABLE = 'public, max-age=31536000, immutable';
+
+// The scripts in the vendor folder, keyed by URL path. Only these exact paths
+// are ever served, so a request can never reach any other file on disk.
+function loadVendorScripts(dir) {
+  const scripts = new Map();
+  if (!fs.existsSync(dir)) return scripts;
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith('.js')) continue;
+    const body = fs.readFileSync(path.join(dir, name));
+    scripts.set(`/vendor/${name}`, {
+      body,
+      etag: `W/"${sha256(body).toString('base64url').slice(0, 22)}"`,
+      gzip: zlib.gzipSync(body),
+    });
+  }
+  return scripts;
+}
 
 function createApp({
   store,
   adminKey = '',
   frameAncestors,
   indexPath = DEFAULT_INDEX,
+  vendorDir = DEFAULT_VENDOR_DIR,
   writeLimit = DEFAULT_WRITE_LIMIT,
 }) {
   const limiter = new RateLimiter(writeLimit);
   const adminDigest = adminKey ? sha256(adminKey) : null;
 
   // Teams shows the page in an iframe, so it must not be blocked from framing:
-  // no X-Frame-Options, and frame-ancestors lists the Teams hosts. Scripts and
-  // styles are inline; user text is only ever inserted as text, never as HTML.
+  // no X-Frame-Options, and frame-ancestors lists the Teams hosts. Scripts come
+  // from our own origin (the vendored Teams SDK) or are inline; styles are
+  // inline. User text is only ever inserted as text, never as HTML.
   const securityHeaders = {
     'Content-Security-Policy': [
       "default-src 'none'",
-      "script-src 'unsafe-inline'",
+      "script-src 'self' 'unsafe-inline'",
       "style-src 'unsafe-inline'",
       "connect-src 'self'",
       'img-src data:',
@@ -48,6 +70,7 @@ function createApp({
     etag: `W/"${sha256(indexBody).toString('base64url').slice(0, 22)}"`,
     gzip: zlib.gzipSync(indexBody),
   };
+  const vendorScripts = loadVendorScripts(vendorDir);
 
   function send(res, status, body, headers = {}) {
     res.writeHead(status, { ...securityHeaders, ...headers });
@@ -70,12 +93,12 @@ function createApp({
   }
 
   // Serves a body that changes rarely: weak ETag, 304 support, lazy gzip.
-  function sendCacheable(req, res, page, contentType) {
+  function sendCacheable(req, res, page, contentType, cacheControl = 'no-cache') {
     const weakEtag = page.etag.startsWith('W/') ? page.etag : `W/${page.etag}`;
     const headers = {
       'Content-Type': contentType,
       ETag: weakEtag,
-      'Cache-Control': 'no-cache',
+      'Cache-Control': cacheControl,
       Vary: 'Accept-Encoding',
     };
     const strip = (v) => v.trim().replace(/^W\//, '');
@@ -127,6 +150,12 @@ function createApp({
     if (pathname === '/' || pathname === '/index.html') {
       mustAllow(method, ['GET', 'HEAD']);
       return sendCacheable(req, res, indexPage, 'text/html; charset=utf-8');
+    }
+
+    const script = vendorScripts.get(pathname);
+    if (script) {
+      mustAllow(method, ['GET', 'HEAD']);
+      return sendCacheable(req, res, script, 'text/javascript; charset=utf-8', IMMUTABLE);
     }
 
     if (pathname === '/api/terms') {

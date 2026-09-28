@@ -1,11 +1,11 @@
-# Teams Glossary — Design
+# AZB-Glossar — Design
 
 Date: 2026-09-28
 
 ## Purpose
 
 A shared glossary for one Microsoft Teams group chat. Members open it from a
-**Website** tab in the chat header. They see every term in one overview and
+tab in the chat header. They see every term in one overview and
 click a term to read its explanation. Any member can add or correct terms.
 
 Self-hosted on the owner's Proxmox homelab as a Docker container, exposed
@@ -15,7 +15,7 @@ built and run on the homelab. The server logic is tested locally without Docker.
 
 ## Success criteria
 
-- Opens and renders inside a Teams Website tab (desktop and mobile).
+- Opens and renders inside a chat tab of a small custom Teams app (desktop and mobile).
 - First paint is fast: one small HTML file, no external requests, no framework.
 - Plain, always-dark page. On a wide desktop tab it uses the full width.
 - Terms persist across container restarts and are shared by everyone in the chat.
@@ -117,15 +117,29 @@ Validation and limits:
 
 ## Teams compatibility
 
-- Added via the chat's **+ → Website** with the Pangolin URL.
+- **Correction (2026-09-28):** the first version of this design assumed the
+  built-in Teams **Website** tab would show the page. It does not: since July
+  2024 new Teams opens a Website tab's URL in a new browser tab, regardless of
+  the site's headers (Microsoft 365 Developer Blog, "Upcoming updates to loading
+  websites in Teams tabs"). Embedding needs a Teams app.
+- The page is wrapped in a small Teams app package (`teams-app/`, built by
+  `scripts/build-teams-app.js`): a manifest with one static tab (scopes
+  `personal` and `groupChat`) pointing at the public URL, plus a 192x192 color
+  icon and a 32x32 white-on-transparent outline icon. The manifest keeps a
+  fixed app id so re-uploads update the same app.
+- Inside a frame (or the Teams mobile webview) the page loads the Teams JS SDK,
+  vendored in `public/vendor/` and served from the same origin, calls
+  `app.initialize()` and, once the list has loaded, `notifyAppLoaded()` and
+  `notifySuccess()`. Outside a frame the SDK is never fetched.
 - Response header `Content-Security-Policy: frame-ancestors 'self' <teams
   origins>` and **no** `X-Frame-Options`. The Teams origin list is configurable
   through `FRAME_ANCESTORS`. The default is verified against Microsoft's current
   documentation during implementation.
 - Also sent: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
-  and a CSP limiting `connect-src` to `'self'`. Scripts and styles are inline,
-  so the CSP allows `'unsafe-inline'` for them. This is acceptable because no
-  user text is ever inserted as HTML.
+  and a CSP limiting `connect-src` to `'self'`. Scripts are inline or from our
+  own origin (the vendored SDK), styles are inline, so the CSP allows `'self'`
+  and `'unsafe-inline'` for them. This is acceptable because no user text is
+  ever inserted as HTML.
 - No cookies. No dependence on localStorage or sessionStorage (Teams iframes
   partition storage). No `alert`, `confirm`, `prompt` or popups. No external
   fonts, scripts or images.
@@ -176,7 +190,7 @@ Automated (`node --test`, run locally, no Docker):
   add, duplicate, edit, delete with admin key, and user text never executed
   as HTML
 
-Manual, once deployed: open in a Teams Website tab on desktop and mobile, check
+Manual, once deployed: upload the Teams app package, add it to a group chat, open the tab on desktop and mobile, check
 the multi-column layout at several widths, add, edit and delete a term, and
 restart the container to confirm persistence.
 

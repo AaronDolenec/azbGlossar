@@ -247,6 +247,39 @@ test('internal errors return a generic 500 without leaking details', async (t) =
   assert.match(JSON.parse(text).error, /server error/i);
 });
 
+test('serves the vendored Teams SDK from our own origin with long-lived caching', async (t) => {
+  const { base, call } = await start(t);
+  const vendored = fs.readdirSync(path.join(__dirname, '..', 'public', 'vendor')).filter((n) => n.endsWith('.js'));
+  assert.equal(vendored.length, 1, 'exactly one vendored script expected');
+  const res = await call('GET', `/vendor/${vendored[0]}`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /^text\/javascript/);
+  assert.match(res.headers.get('cache-control'), /max-age=\d+.*immutable/);
+  assert.match(await res.text(), /microsoftTeams/);
+  assert.equal((await call('GET', `/vendor/${vendored[0]}`, undefined, { 'if-none-match': res.headers.get('etag') })).status, 304);
+  const gz = await rawRequest(`${base}/vendor/${vendored[0]}`, { headers: { 'accept-encoding': 'gzip' } });
+  assert.equal(gz.headers['content-encoding'], 'gzip');
+  assert.ok(gz.body.length < 120 * 1024, 'gzipped SDK should be small');
+});
+
+test('vendor route only serves known files (no path traversal)', async (t) => {
+  const { base, call } = await start(t);
+  assert.equal((await call('GET', '/vendor/nope.js')).status, 404);
+  for (const p of ['/vendor/%2e%2e/server.js', '/vendor/..%2fserver.js', '/vendor/../server.js', '/vendor/']) {
+    const res = await rawRequest(`${base}${p}`, {});
+    assert.equal(res.status, 404, p);
+  }
+  assert.equal((await call('POST', '/vendor/anything.js', {})).status, 404);
+});
+
+test('CSP allows scripts from our own origin (for the SDK) but nothing external', async (t) => {
+  const { call } = await start(t);
+  const csp = (await call('GET', '/')).headers.get('content-security-policy');
+  assert.match(csp, /script-src 'self' 'unsafe-inline'(;|$)/);
+  assert.doesNotMatch(csp, /https?:\/\/[^ ;]*(cdn|unpkg|jsdelivr)/i);
+  assert.match(csp, /default-src 'none'/);
+});
+
 test('keep-alive outlasts typical proxy idle timeouts', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glossar-ka-'));
   const store = new Store(dir);

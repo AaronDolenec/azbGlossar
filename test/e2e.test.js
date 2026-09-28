@@ -6,6 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { Store } = require('../src/store');
@@ -146,6 +147,22 @@ test.after(async () => {
 
 const columnsScript = "new Set([...document.querySelectorAll('.term')].map(t => t.offsetLeft)).size";
 const noOverflowScript = 'document.documentElement.scrollWidth <= window.innerWidth';
+
+test('shows the AZB-Glossar name and a working icon', { skip }, async () => {
+  const { cdp } = ctx;
+  assert.equal(await cdp.eval('document.title'), 'AZB-Glossar');
+  assert.equal(await cdp.eval("document.querySelector('h1').textContent"), 'AZB-Glossar');
+  // The icon must decode as an image under the page's own CSP.
+  const size = await cdp.eval(`new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve([img.naturalWidth, img.naturalHeight]);
+    img.onerror = () => resolve(null);
+    img.src = document.querySelector('link[rel=icon]').href;
+  })`);
+  assert.ok(size && size[0] > 0 && size[1] > 0, 'favicon did not load');
+  // The Teams SDK is not fetched on a normal, unframed visit.
+  assert.equal(await cdp.eval("typeof window.microsoftTeams"), 'undefined');
+});
 
 test('lists every term, grouped under letter dividers', { skip }, async () => {
   const { cdp } = ctx;
@@ -297,6 +314,32 @@ test('deleting needs the admin key', { skip }, async () => {
   })()`);
   await cdp.waitFor("![...document.querySelectorAll('.term-btn')].some(b => b.textContent.startsWith('Zebra'))", 'term to disappear');
   assert.equal(ctx.store.list().length, 40);
+});
+
+test('inside a frame, as in Teams, the page loads the SDK and starts the Teams handshake', { skip }, async () => {
+  const { cdp } = ctx;
+  // A stand-in Teams host on another origin that frames the page and records
+  // the messages the page posts to it.
+  const host = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(`<!doctype html><body style="margin:0"><iframe src="${ctx.framedUrl}" style="width:100vw;height:100vh;border:0"></iframe>
+      <script>window.__msgs=[];addEventListener('message',function(e){window.__msgs.push(typeof e.data==='string'?e.data:JSON.stringify(e.data))})</script>`);
+  });
+  await new Promise((resolve) => host.listen(0, resolve));
+  const hostOrigin = `http://localhost:${host.address().port}`;
+  const framed = createApp({ store: ctx.store, adminKey: ADMIN_KEY, frameAncestors: [hostOrigin] });
+  await new Promise((resolve) => framed.listen(0, '127.0.0.1', resolve));
+  ctx.framedUrl = `http://127.0.0.1:${framed.address().port}/`;
+  try {
+    await cdp.send('Page.navigate', { url: `${hostOrigin}/` });
+    await cdp.waitFor("window.__msgs && window.__msgs.some(m => m.indexOf('initialize') !== -1)", 'the Teams SDK handshake', 8000);
+    assert.ok(true);
+    await cdp.shot('framed-in-host');
+  } finally {
+    framed.closeAllConnections();
+    host.closeAllConnections();
+    await Promise.all([new Promise((r) => framed.close(r)), new Promise((r) => host.close(r))]);
+  }
 });
 
 test('the page ran without script errors or CSP violations', { skip }, () => {

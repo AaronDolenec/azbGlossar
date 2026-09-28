@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<title>Glossary</title>
-<link rel="icon" href="data:,">
+<title>AZB-Glossar</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232f5b93'/%3E%3Ctext x='32' y='43' font-family='Arial,Helvetica,sans-serif' font-size='25' font-weight='700' text-anchor='middle' fill='%23fff'%3EAZB%3C/text%3E%3C/svg%3E">
 <style>
 :root {
   color-scheme: dark;
@@ -168,7 +168,7 @@ textarea { resize: vertical; min-height: 6rem; }
 </head>
 <body>
 <header class="bar">
-  <h1>Glossary</h1>
+  <h1>AZB-Glossar</h1>
   <input id="filter" type="search" placeholder="Filter terms…" aria-label="Filter terms" autocomplete="off">
   <span id="count" class="count" aria-live="polite"></span>
   <button id="add" class="btn primary" type="button">+ Add term</button>
@@ -520,7 +520,38 @@ textarea { resize: vertical; min-height: 6rem; }
   document.addEventListener('visibilitychange', refresh);
   window.addEventListener('focus', refresh);
 
-  load();
+  // ---- Microsoft Teams -----------------------------------------------------
+  // As a Teams tab the page runs inside a frame (or a mobile webview) and has
+  // to tell Teams it is ready, otherwise Teams keeps showing a spinner. The SDK
+  // is only fetched in that case, so a normal browser visit stays light.
+  var teamsReady = null;
+  function startTeams() {
+    if (window.parent === window && !window.nativeInterface) return;
+    var script = document.createElement('script');
+    script.src = '/vendor/teams-js-2.57.0.min.js';
+    teamsReady = new Promise(function (resolve) {
+      script.onload = function () {
+        try {
+          window.microsoftTeams.app.initialize().then(function () { resolve(true); }, function () { resolve(false); });
+        } catch (e) { resolve(false); }
+      };
+      script.onerror = function () { resolve(false); };
+    });
+    document.head.append(script);
+  }
+  function tellTeamsLoaded() {
+    if (!teamsReady) return;
+    teamsReady.then(function (ok) {
+      if (!ok) return;
+      try {
+        window.microsoftTeams.app.notifyAppLoaded();
+        window.microsoftTeams.app.notifySuccess();
+      } catch (e) { /* not fatal: the page still works */ }
+    });
+  }
+
+  startTeams();
+  load().then(tellTeamsLoaded);
 })();
 </script>
 </body>

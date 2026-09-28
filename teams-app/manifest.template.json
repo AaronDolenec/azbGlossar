@@ -1,0 +1,36 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.22/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.22",
+  "version": "1.0.0",
+  "id": "1dbcc813-a6ea-4f7d-b95a-3236172ee271",
+  "developer": {
+    "name": "Aaron Dolenec",
+    "websiteUrl": "https://github.com/AaronDolenec/azbGlossar",
+    "privacyUrl": "https://github.com/AaronDolenec/azbGlossar#readme",
+    "termsOfUseUrl": "https://github.com/AaronDolenec/azbGlossar#readme"
+  },
+  "name": {
+    "short": "AZB-Glossar",
+    "full": "AZB-Glossar"
+  },
+  "description": {
+    "short": "A shared glossary for this chat: terms and their explanations.",
+    "full": "AZB-Glossar is a shared glossary for a group chat. Everyone in the chat can look up terms and add or correct explanations. The terms are stored on your own server."
+  },
+  "icons": {
+    "outline": "outline.png",
+    "color": "color.png"
+  },
+  "accentColor": "#2F5B93",
+  "staticTabs": [
+    {
+      "entityId": "glossary",
+      "name": "AZB-Glossar",
+      "contentUrl": "{{APP_URL}}",
+      "websiteUrl": "{{APP_URL}}",
+      "scopes": ["personal", "groupChat"],
+      "context": ["personalTab", "privateChatTab", "meetingChatTab"]
+    }
+  ],
+  "validDomains": ["{{APP_HOST}}"]
+}
