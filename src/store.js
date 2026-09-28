@@ -42,6 +42,21 @@ function cleanDefinition(value) {
   return v;
 }
 
+// Renaming over an existing file can fail briefly with EPERM/EBUSY/EACCES when
+// antivirus, an indexer or a network volume has the file open (common on
+// Windows and on SMB/NFS mounts). The condition clears within milliseconds.
+async function renameWithRetry(from, to) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fsp.rename(from, to);
+    } catch (err) {
+      const transient = err.code === 'EPERM' || err.code === 'EBUSY' || err.code === 'EACCES';
+      if (!transient || attempt >= 5) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 15 * 2 ** attempt));
+    }
+  }
+}
+
 function requireObject(input) {
   if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     throw new HttpError(400, 'The request body must be a JSON object');
@@ -198,7 +213,7 @@ class Store {
       } finally {
         await fh.close();
       }
-      await fsp.rename(tmp, this.file);
+      await renameWithRetry(tmp, this.file);
     } catch (err) {
       await fsp.unlink(tmp).catch(() => {});
       throw err;

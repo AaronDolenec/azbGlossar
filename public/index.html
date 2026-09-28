@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Glossary</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #111215;
+  --panel: #1a1c21;
+  --line: #2b2e35;
+  --text: #e7e9ec;
+  --muted: #9aa1ab;
+  --accent: #7ab0ff;
+  --danger: #ff7b72;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+button, input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .6rem clamp(1rem, 2vw, 2rem);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.bar h1 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.bar #filter { flex: 1 1 8rem; min-width: 0; max-width: 34rem; }
+.count { color: var(--muted); font-size: .875rem; white-space: nowrap; }
+.bar #add { margin-left: auto; }
+/* The tab already carries the title in Teams; give the space to the filter. */
+@media (max-width: 34rem) { .bar h1 { display: none; } }
+@media (max-width: 26rem) { .count { display: none; } }
+
+input, textarea {
+  width: 100%;
+  padding: .5rem .65rem;
+  background: #0c0d10;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+textarea { resize: vertical; min-height: 6rem; }
+.btn {
+  white-space: nowrap;
+  padding: .45rem .9rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn:hover { border-color: #444953; }
+.btn:disabled, input:disabled, textarea:disabled { opacity: .55; cursor: default; }
+.btn.primary { background: #23446f; border-color: #2f5b93; }
+.btn.primary:hover { background: #2a5286; }
+.btn.danger { color: var(--danger); border-color: #5c2f2c; }
+.btn.danger-outline { color: var(--danger); background: transparent; border-color: #3d2422; margin-left: auto; }
+
+#status {
+  margin: 1rem clamp(1rem, 2vw, 2rem) 0;
+  padding: .6rem .9rem;
+  background: var(--panel);
+  border: 1px solid #5c2f2c;
+  border-radius: 6px;
+  color: #ffb4ae;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+
+#editor {
+  margin: 1rem clamp(1rem, 2vw, 2rem) 0;
+  padding: 1rem;
+  max-width: 44rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  scroll-margin-top: 5rem;
+}
+.editor-title { margin: 0 0 .75rem; font-size: 1rem; }
+
+.form { display: grid; gap: .75rem; }
+.form label { display: grid; gap: .25rem; }
+.lbl { color: var(--muted); font-size: .85rem; }
+.form-msg { color: var(--danger); min-height: 0; }
+.form-msg:empty { display: none; }
+.form-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.delete-box { display: grid; gap: .5rem; padding-top: .75rem; border-top: 1px solid var(--line); }
+.delete-box .btn { justify-self: start; }
+
+/* One big alphabetical overview. It flows into as many columns as the width
+   allows, with thin divider lines between columns. */
+#list {
+  padding: 1rem clamp(1rem, 2vw, 2rem) 3rem;
+  column-width: 22rem;
+  column-gap: 2.5rem;
+  column-rule: 1px solid var(--line);
+}
+.letter {
+  margin: 1.1rem 0 .35rem;
+  padding-bottom: .2rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: .8rem;
+  font-weight: 600;
+  letter-spacing: .12em;
+  break-after: avoid;
+}
+/* Later columns drop a heading's top margin at the break; match the first. */
+.letter:first-child { margin-top: 0; }
+.term { break-inside: avoid; scroll-margin-top: 5rem; }
+.term-btn {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  width: 100%;
+  padding: .3rem .4rem;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.term-btn:hover { background: var(--panel); }
+.chev {
+  flex: none;
+  width: .5rem;
+  height: .5rem;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+}
+.term-btn[aria-expanded="true"] .chev { transform: rotate(45deg); }
+.term-btn[aria-expanded="true"] { color: var(--accent); }
+.def {
+  margin: .15rem 0 .6rem .75rem;
+  padding: .1rem 0 .1rem .9rem;
+  border-left: 2px solid var(--line);
+}
+.text { margin: 0 0 .4rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.link {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font-size: .875rem;
+  cursor: pointer;
+}
+.link:hover { text-decoration: underline; }
+.empty { margin: 1rem 0; color: var(--muted); }
+</style>
+</head>
+<body>
+<header class="bar">
+  <h1>Glossary</h1>
+  <input id="filter" type="search" placeholder="Filter terms…" aria-label="Filter terms" autocomplete="off">
+  <span id="count" class="count" aria-live="polite"></span>
+  <button id="add" class="btn primary" type="button">+ Add term</button>
+</header>
+<main>
+  <section id="editor" hidden></section>
+  <div id="status" role="status" hidden></div>
+  <div id="list"><p class="empty">Loading…</p></div>
+</main>
+<script>
+(function () {
+  'use strict';
+
+  // ---- helpers -------------------------------------------------------------
+  // All user text goes into the page through textContent, never as HTML.
+  function el(tag, props) {
+    var node = document.createElement(tag);
+    Object.keys(props || {}).forEach(function (key) {
+      var value = props[key];
+      if (key === 'class') node.className = value;
+      else if (key === 'text') node.textContent = value;
+      else if (key.slice(0, 2) === 'on') node.addEventListener(key.slice(2), value);
+      else if (value === true) node.setAttribute(key, '');
+      else if (value !== false && value != null) node.setAttribute(key, value);
+    });
+    for (var i = 2; i < arguments.length; i++) if (arguments[i]) node.append(arguments[i]);
+    return node;
+  }
+
+  var collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+  function fold(s) { return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase(); }
+  function letterOf(term) {
+    var first = Array.from(fold(term).trim())[0] || '';
+    return /\p{L}/u.test(first) ? first.toUpperCase() : '#';
+  }
+  function prepare(list) {
+    return list
+      .map(function (t) { return Object.assign({}, t, { key: fold(t.term + '\n' + t.definition) }); })
+      .sort(function (a, b) { return collator.compare(a.term, b.term); });
+  }
+
+  // ---- state ---------------------------------------------------------------
+  var terms = [];
+  var loaded = false;
+  var lastSnapshot = '';
+  var lastLoad = 0;
+  var query = '';
+  var expanded = new Set();
+  var editingId = null;
+  var editForm = null;
+  var addForm = null;
+
+  var listEl = document.getElementById('list');
+  var editorEl = document.getElementById('editor');
+  var statusEl = document.getElementById('status');
+  var countEl = document.getElementById('count');
+  var filterEl = document.getElementById('filter');
+  var addBtn = document.getElementById('add');
+
+  // ---- server calls --------------------------------------------------------
+  function ApiError(message, status) {
+    this.message = message;
+    this.status = status;
+  }
+
+  async function api(method, url, body, headers) {
+    var init = { method: method, headers: Object.assign({}, headers) };
+    if (body !== undefined) {
+      init.headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(body);
+    }
+    if (window.AbortSignal && AbortSignal.timeout) init.signal = AbortSignal.timeout(15000);
+    var res;
+    try { res = await fetch(url, init); } catch (e) { throw new Error('network'); }
+    if (res.status === 204) return null;
+    var data = null;
+    try { data = await res.json(); } catch (e) { /* not JSON */ }
+    if (!res.ok) throw new ApiError((data && data.error) || 'The server answered ' + res.status, res.status);
+    return data;
+  }
+
+  function messageFor(err) {
+    return err instanceof ApiError ? err.message : 'Could not reach the server. Your text is still here, please try again.';
+  }
+
+  async function load() {
+    lastLoad = Date.now();
+    try {
+      var data = await api('GET', '/api/terms');
+      hideStatus();
+      var snapshot = JSON.stringify(data.terms);
+      if (loaded && snapshot === lastSnapshot) return;
+      lastSnapshot = snapshot;
+      loaded = true;
+      terms = prepare(data.terms);
+      var ids = new Set(terms.map(function (t) { return t.id; }));
+      if (editingId && !ids.has(editingId)) { editingId = null; editForm = null; }
+      expanded.forEach(function (id) { if (!ids.has(id)) expanded.delete(id); });
+      render();
+    } catch (err) {
+      showStatus(loaded
+        ? 'Could not refresh. Showing the last loaded list.'
+        : 'Could not load the glossary. Check your connection and try again.');
+      if (!loaded) listEl.replaceChildren();
+    }
+  }
+
+  function showStatus(text) {
+    statusEl.replaceChildren(el('span', { text: text }), el('button', { class: 'btn', type: 'button', text: 'Retry', onclick: load }));
+    statusEl.hidden = false;
+  }
+  function hideStatus() { statusEl.hidden = true; }
+
+  // ---- rendering -----------------------------------------------------------
+  function render() {
+    var q = fold(query.trim());
+    var shown = q ? terms.filter(function (t) { return t.key.indexOf(q) !== -1; }) : terms;
+    countEl.textContent = q
+      ? shown.length + ' of ' + terms.length
+      : terms.length + (terms.length === 1 ? ' term' : ' terms');
+    listEl.replaceChildren();
+    if (!shown.length) {
+      listEl.style.columnCount = '1';
+      listEl.append(el('p', {
+        class: 'empty',
+        text: terms.length ? 'No terms match “' + query.trim() + '”.' : 'No terms yet. Use “Add term” to create the first one.'
+      }));
+      return;
+    }
+    // Keep short lists in few columns instead of spreading them thin.
+    listEl.style.columnCount = String(Math.max(1, Math.ceil(shown.length / 8)));
+    var frag = document.createDocumentFragment();
+    var lastLetter = null;
+    shown.forEach(function (t) {
+      var letter = letterOf(t.term);
+      if (letter !== lastLetter) {
+        frag.append(el('h2', { class: 'letter', text: letter }));
+        lastLetter = letter;
+      }
+      frag.append(renderTerm(t));
+    });
+    listEl.append(frag);
+  }
+
+  function renderTerm(t) {
+    var open = expanded.has(t.id) || editingId === t.id;
+    var bodyId = 'd-' + t.id;
+    var btn = el('button', { class: 'term-btn', type: 'button', 'aria-expanded': String(open), 'aria-controls': bodyId },
+      el('span', { class: 'chev', 'aria-hidden': 'true' }), el('span', { text: t.term }));
+    var body = el('div', { class: 'def', id: bodyId, hidden: !open });
+    fillBody(body, t);
+    return el('div', { class: 'term', 'data-id': t.id }, btn, body);
+  }
+
+  function fillBody(body, t) {
+    body.replaceChildren();
+    if (editingId === t.id && editForm) { body.append(editForm); return; }
+    body.append(
+      el('p', { class: 'text', text: t.definition }),
+      el('button', { class: 'link', type: 'button', 'data-act': 'edit', text: 'Edit' })
+    );
+  }
+
+  function itemFor(id) { return listEl.querySelector('.term[data-id="' + id + '"]'); }
+  function reveal(id) {
+    var item = itemFor(id);
+    if (item) item.scrollIntoView({ block: 'nearest' });
+  }
+
+  // ---- reading -------------------------------------------------------------
+  listEl.addEventListener('click', function (e) {
+    var item = e.target.closest('.term');
+    if (!item) return;
+    if (e.target.closest('[data-act="edit"]')) return startEdit(item);
+    if (e.target.closest('.term-btn')) toggle(item);
+  });
+
+  function toggle(item) {
+    var id = item.dataset.id;
+    var btn = item.querySelector('.term-btn');
+    var open = btn.getAttribute('aria-expanded') !== 'true';
+    btn.setAttribute('aria-expanded', String(open));
+    item.querySelector('.def').hidden = !open;
+    if (open) {
+      expanded.add(id);
+      // Columns re-balance when a term opens; keep the clicked term on screen.
+      item.scrollIntoView({ block: 'nearest' });
+    } else {
+      expanded.delete(id);
+      if (editingId === id) closeEdit();
+    }
+  }
+
+  // ---- forms ---------------------------------------------------------------
+  function buildForm(opts) {
+    var termInput = el('input', { name: 'term', type: 'text', maxlength: '100', autocomplete: 'off', spellcheck: 'false' });
+    var defInput = el('textarea', { name: 'definition', rows: '5', maxlength: '5000' });
+    termInput.value = opts.term || '';
+    defInput.value = opts.definition || '';
+    var msg = el('div', { class: 'form-msg', role: 'alert' });
+    var actions = el('div', { class: 'form-actions' },
+      el('button', { class: 'btn primary', type: 'submit', text: 'Save' }),
+      el('button', { class: 'btn', type: 'button', text: 'Cancel', onclick: opts.onCancel }));
+    var form = el('form', { class: 'form', novalidate: true },
+      el('label', {}, el('span', { class: 'lbl', text: 'Term' }), termInput),
+      el('label', {}, el('span', { class: 'lbl', text: 'Explanation' }), defInput),
+      msg, actions);
+
+    if (opts.onDelete) {
+      var keyInput = el('input', { name: 'key', type: 'password', autocomplete: 'off', placeholder: 'Admin key' });
+      var box = el('div', { class: 'delete-box', hidden: true },
+        el('span', { class: 'lbl', text: 'Deleting needs the admin key' }), keyInput,
+        el('button', { class: 'btn danger', type: 'button', text: 'Delete permanently', onclick: function () { opts.onDelete(keyInput.value, form); } }));
+      actions.append(el('button', {
+        class: 'btn danger-outline', type: 'button', text: 'Delete…',
+        onclick: function () { box.hidden = !box.hidden; if (!box.hidden) keyInput.focus(); }
+      }));
+      form.append(box);
+    }
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var values = { term: termInput.value, definition: defInput.value };
+      if (!values.term.trim()) { msg.textContent = 'Please enter a term.'; termInput.focus(); return; }
+      if (!values.definition.trim()) { msg.textContent = 'Please enter an explanation.'; defInput.focus(); return; }
+      opts.onSubmit(values, form);
+    });
+    form.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.preventDefault(); opts.onCancel(); }
+    });
+    form.termInput = termInput;
+    form.showError = function (text) { msg.textContent = text; };
+    form.setBusy = function (busy) {
+      form.querySelectorAll('button, input, textarea').forEach(function (n) { n.disabled = busy; });
+    };
+    return form;
+  }
+
+  async function submit(form, work) {
+    form.showError('');
+    form.setBusy(true);
+    try {
+      await work();
+    } catch (err) {
+      form.showError(messageFor(err));
+    } finally {
+      form.setBusy(false);
+    }
+  }
+
+  // ---- add -----------------------------------------------------------------
+  addBtn.addEventListener('click', function () {
+    if (addForm) { addForm.termInput.focus(); return; }
+    addForm = buildForm({ onSubmit: saveAdd, onCancel: closeAdd });
+    editorEl.replaceChildren(el('h2', { class: 'editor-title', text: 'Add a term' }), addForm);
+    editorEl.hidden = false;
+    editorEl.scrollIntoView({ block: 'nearest' });
+    addForm.termInput.focus();
+  });
+
+  function closeAdd() {
+    addForm = null;
+    editorEl.hidden = true;
+    editorEl.replaceChildren();
+  }
+
+  function saveAdd(values, form) {
+    return submit(form, async function () {
+      var created = await api('POST', '/api/terms', values);
+      closeAdd();
+      query = '';
+      filterEl.value = '';
+      terms = prepare(terms.concat([created]));
+      lastSnapshot = '';
+      expanded.add(created.id);
+      render();
+      reveal(created.id);
+    });
+  }
+
+  // ---- edit / delete -------------------------------------------------------
+  function startEdit(item) {
+    var id = item.dataset.id;
+    var t = terms.find(function (x) { return x.id === id; });
+    if (!t) return;
+    closeEdit();
+    editingId = id;
+    editForm = buildForm({
+      term: t.term,
+      definition: t.definition,
+      onSubmit: function (values, form) { saveEdit(id, values, form); },
+      onCancel: closeEdit,
+      onDelete: function (key, form) { remove(id, key, form); }
+    });
+    fillBody(item.querySelector('.def'), t);
+    editForm.termInput.focus();
+  }
+
+  function closeEdit() {
+    if (!editingId) return;
+    var id = editingId;
+    editingId = null;
+    editForm = null;
+    var item = itemFor(id);
+    var t = terms.find(function (x) { return x.id === id; });
+    if (item && t) fillBody(item.querySelector('.def'), t);
+  }
+
+  function saveEdit(id, values, form) {
+    return submit(form, async function () {
+      var updated = await api('PUT', '/api/terms/' + encodeURIComponent(id), values);
+      editingId = null;
+      editForm = null;
+      terms = prepare(terms.map(function (t) { return t.id === id ? updated : t; }));
+      lastSnapshot = '';
+      expanded.add(id);
+      render();
+      reveal(id);
+    });
+  }
+
+  function remove(id, key, form) {
+    if (!key) { form.showError('Enter the admin key to delete this term.'); return Promise.resolve(); }
+    return submit(form, async function () {
+      await api('DELETE', '/api/terms/' + encodeURIComponent(id), undefined, { 'X-Admin-Key': key });
+      editingId = null;
+      editForm = null;
+      expanded.delete(id);
+      terms = terms.filter(function (t) { return t.id !== id; });
+      lastSnapshot = '';
+      render();
+    });
+  }
+
+  // ---- filter and refresh --------------------------------------------------
+  var filterTimer;
+  filterEl.addEventListener('input', function () {
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(function () { query = filterEl.value; render(); }, 60);
+  });
+  filterEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && filterEl.value) { filterEl.value = ''; query = ''; render(); }
+  });
+
+  // Pick up terms other people added when the tab is shown again.
+  function refresh() {
+    if (!document.hidden && Date.now() - lastLoad > 5000) load();
+  }
+  document.addEventListener('visibilitychange', refresh);
+  window.addEventListener('focus', refresh);
+
+  load();
+})();
+</script>
+</body>
+</html>

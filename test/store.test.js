@@ -168,6 +168,32 @@ test('failed writes do not change memory and do not poison the queue', async () 
   assert.deepEqual(store.list().map((t) => t.term), ['after', 'keep']);
 });
 
+test('retries a transient rename failure (EPERM/EBUSY from antivirus or network volumes)', async (t) => {
+  const fsp = require('node:fs/promises');
+  const realRename = fsp.rename;
+  let calls = 0;
+  t.mock.method(fsp, 'rename', async (...args) => {
+    calls += 1;
+    if (calls <= 2) throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' });
+    return realRename(...args);
+  });
+  const dir = tmpDir();
+  const store = newStore(dir);
+  await store.add({ term: 'Flaky', definition: 'disk' });
+  assert.equal(calls, 3);
+  assert.equal(newStore(dir).list()[0].term, 'Flaky');
+});
+
+test('gives up on a persistent rename failure and keeps memory unchanged', async (t) => {
+  const fsp = require('node:fs/promises');
+  t.mock.method(fsp, 'rename', async () => {
+    throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+  });
+  const store = newStore();
+  await assert.rejects(store.add({ term: 'Nope', definition: 'x' }), /busy/);
+  assert.deepEqual(store.list(), []);
+});
+
 test('refuses to start on a corrupt file and leaves it untouched', () => {
   const dir = tmpDir();
   const file = path.join(dir, 'glossary.json');
