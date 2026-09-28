@@ -1,0 +1,21 @@
+services:
+  glossary:
+    build: .
+    image: azb-glossar:latest
+    container_name: azb-glossar
+    restart: unless-stopped
+    environment:
+      # Required to delete terms. Set it in .env (see .env.example).
+      ADMIN_KEY: ${ADMIN_KEY:?Set ADMIN_KEY in .env}
+      # Only if Microsoft adds a new Teams host; the default list is built in.
+      # FRAME_ANCESTORS: "https://teams.microsoft.com https://*.cloud.microsoft"
+    volumes:
+      - glossary-data:/data
+    ports:
+      - "8080:8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  glossary-data:

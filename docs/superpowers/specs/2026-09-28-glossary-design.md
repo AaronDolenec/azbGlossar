@@ -32,9 +32,13 @@ ranking, import/export UI, and the Teams JS SDK.
 One container: `node:alpine` running `server.js` with **no npm dependencies**.
 
 ```
-server.js          HTTP server: static page, JSON API, security headers
+server.js          entrypoint: reads config, starts the server, graceful shutdown
+src/config.js      environment parsing and validation
+src/store.js       terms: validation, atomic persistence, backups
+src/rate-limit.js  per-client sliding-window limiter
+src/app.js         HTTP routing, security headers, caching
 public/index.html  the whole UI, inline CSS + JS, no external requests
-test/api.test.js   API tests using node:test
+test/              node:test suites: store, api, config, and browser e2e
 Dockerfile
 docker-compose.yml
 .env.example
@@ -70,8 +74,10 @@ Validation and limits:
 - `term`: trimmed, 1–100 characters. `definition`: trimmed, 1–5000 characters.
 - Duplicate terms are rejected with 409, compared ignoring case and accents.
 - Request body max 16 KB (413). Total terms max 5000 (409 with a clear message).
-- Writes are rate-limited to 30 per minute per client IP (429). The client IP is
-  taken from `X-Forwarded-For`, because the server always sits behind Pangolin.
+- Writes (including failed delete attempts) are rate-limited to 30 per minute
+  per client IP (429). The client IP is the **last** `X-Forwarded-For` entry,
+  because the server always sits behind Pangolin and earlier entries can be
+  forged by the client.
 - `DELETE` compares `X-Admin-Key` with `ADMIN_KEY` using a timing-safe compare.
   Wrong or missing key gives 403. If `ADMIN_KEY` is unset, delete is disabled
   (403) and a warning is logged at startup.
@@ -103,7 +109,8 @@ Validation and limits:
   admin-key field and a confirm button. A wrong key shows an inline message.
   The key is only held in memory for that request.
 - **Freshness:** the list is fetched on load and again when the tab regains
-  focus, so terms added by others appear.
+  focus (at most every 5 seconds), so terms added by others appear. A form
+  that is being edited is kept when the list refreshes.
 - **Errors and empty state:** if the server cannot be reached the page shows a
   clear message with a Retry button. With no terms yet, it shows a short hint
   to add the first one. Save failures keep the form open with the text intact.
@@ -147,7 +154,11 @@ Validation and limits:
 - Malformed JSON or invalid fields: 400 with a specific message.
 - Unknown id: 404. Duplicate term: 409. Body too large: 413. Rate limited: 429.
 - Storage write failure: 500, in-memory state is not changed, and the error is
-  logged. The UI keeps the user's input.
+  logged. The UI keeps the user's input. Renaming the temp file over the data
+  file is retried briefly on `EPERM`/`EBUSY`/`EACCES` (antivirus, SMB/NFS
+  volumes).
+- Keep-alive is 65 s, longer than typical proxy idle timeouts, to avoid
+  sporadic 502s from connection reuse behind Pangolin/Traefik.
 
 ## Testing
 
@@ -159,6 +170,11 @@ Automated (`node --test`, run locally, no Docker):
 - data survives a server restart; corrupt file stops startup
 - rate limit; oversized body; ETag/304
 - response headers: `frame-ancestors` present, no `X-Frame-Options`
+- transient rename failures are retried; persistent ones leave memory unchanged
+- real page in headless Chrome/Edge over the DevTools protocol: column count at
+  1600, 1000, 400 and 320 px, no horizontal scroll, expand/collapse, filter,
+  add, duplicate, edit, delete with admin key, and user text never executed
+  as HTML
 
 Manual, once deployed: open in a Teams Website tab on desktop and mobile, check
 the multi-column layout at several widths, add, edit and delete a term, and
