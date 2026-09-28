@@ -76,7 +76,10 @@ class Cdp {
 
   async resize(width, height = 900) {
     await this.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
-    await sleep(150);
+    await this.waitFor(`window.innerWidth === ${width}`, `the viewport to become ${width}px wide`, 10000);
+    // Two frames, so layout has settled before anything is measured. The
+    // fallback timer covers a page that is not being painted.
+    await this.eval('new Promise((resolve) => { const t = setTimeout(resolve, 400); requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(t); resolve(); })); })');
   }
 
   async shot(name) {
@@ -88,6 +91,30 @@ class Cdp {
 }
 
 const ctx = {};
+
+async function launchBrowser() {
+  ctx.child?.kill();
+  ctx.profile = fs.mkdtempSync(path.join(os.tmpdir(), 'glossar-browser-'));
+  let stderr = '';
+  ctx.child = spawn(browserPath, [
+    '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${ctx.profile}`,
+    '--no-first-run', '--no-default-browser-check', '--disable-gpu', 'about:blank',
+  ], { stdio: ['ignore', 'ignore', 'pipe'] });
+  ctx.child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-1500); });
+  const portFile = path.join(ctx.profile, 'DevToolsActivePort');
+  for (let i = 0; i < 300 && !fs.existsSync(portFile) && ctx.child.exitCode === null; i++) await sleep(100);
+  if (!fs.existsSync(portFile)) {
+    throw new Error(`the browser did not start (exit code ${ctx.child.exitCode}). Its output: ${stderr || '(none)'}`);
+  }
+  const port = fs.readFileSync(portFile, 'utf8').split(/\r?\n/)[0];
+  for (let i = 0; i < 100; i++) {
+    const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+    const target = targets.find((t) => t.type === 'page');
+    if (target) return { port, target };
+    await sleep(100);
+  }
+  throw new Error(`the browser started but opened no page. Its output: ${stderr || '(none)'}`);
+}
 
 test.before(async () => {
   if (skip) return;
@@ -105,21 +132,16 @@ test.before(async () => {
   ctx.server = server;
   ctx.url = `http://127.0.0.1:${server.address().port}/`;
 
-  // A headless browser with a throwaway profile.
-  ctx.profile = fs.mkdtempSync(path.join(os.tmpdir(), 'glossar-browser-'));
-  ctx.child = spawn(browserPath, [
-    '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${ctx.profile}`,
-    '--no-first-run', '--no-default-browser-check', '--disable-gpu', 'about:blank',
-  ], { stdio: 'ignore' });
-  const portFile = path.join(ctx.profile, 'DevToolsActivePort');
-  for (let i = 0; i < 150 && !fs.existsSync(portFile); i++) await sleep(100);
-  assert.ok(fs.existsSync(portFile), 'browser did not start');
-  const port = fs.readFileSync(portFile, 'utf8').split('\n')[0];
+  // A headless browser with a throwaway profile. Cold starts can be slow on a
+  // busy machine, so be patient and try once more before giving up.
   let target;
-  for (let i = 0; i < 50 && !target; i++) {
-    const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-    target = targets.find((t) => t.type === 'page');
-    if (!target) await sleep(100);
+  let port;
+  for (let attempt = 1; !target; attempt++) {
+    try {
+      ({ port, target } = await launchBrowser());
+    } catch (err) {
+      if (attempt >= 2) throw err;
+    }
   }
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
@@ -129,7 +151,7 @@ test.before(async () => {
   await ctx.cdp.send('Page.enable');
   await ctx.cdp.resize(1600);
   await ctx.cdp.send('Page.navigate', { url: ctx.url });
-  await ctx.cdp.waitFor("document.querySelectorAll('.term-btn').length > 0", 'the list to render');
+  await ctx.cdp.waitFor("document.querySelectorAll('.term-btn').length > 0", 'the list to render', 20000);
 });
 
 test.after(async () => {
@@ -230,8 +252,14 @@ test('filter narrows the list and Escape clears it', { skip }, async () => {
   await cdp.waitFor("document.querySelectorAll('.term-btn').length === 40", 'full list again');
 });
 
-test('adding a term: appears in place and expanded; user text is never run as HTML', { skip }, async () => {
+const openCount = "document.querySelectorAll('.term-btn[aria-expanded=\"true\"]').length";
+const zebraItem = "[...document.querySelectorAll('.term')].find(t => t.textContent.startsWith('Zebra'))";
+
+test('adding a term: everything stays folded, the new term is highlighted and on screen; user text is never run as HTML', { skip }, async () => {
   const { cdp } = ctx;
+  // Something is open before adding, to prove it gets folded.
+  await cdp.eval("document.querySelectorAll('.term-btn')[3].click()");
+  assert.equal(await cdp.eval(openCount), 1);
   await cdp.eval("document.getElementById('add').click()");
   await cdp.waitFor("!document.getElementById('editor').hidden", 'add form');
   await cdp.eval(`(() => {
@@ -247,11 +275,17 @@ test('adding a term: appears in place and expanded; user text is never run as HT
     const item = [...document.querySelectorAll('.term')].find(t => t.textContent.startsWith('Zebra'));
     return { open: item.querySelector('.term-btn').getAttribute('aria-expanded'), text: item.querySelector('.text').textContent };
   })()`);
-  assert.equal(shown.open, 'true');
+  assert.equal(shown.open, 'false', 'the new term is folded');
+  assert.equal(await cdp.eval(openCount), 0, 'nothing is left open after adding');
   assert.match(shown.text, /<script>window\.__pwned=2<\/script>/);
   assert.ok(await cdp.eval("document.getElementById('editor').hidden"));
   assert.equal(ctx.store.list().length, 41);
+  assert.ok(await cdp.eval(`!!${zebraItem}.classList.contains('flash')`), 'the new term is briefly highlighted');
+  assert.ok(await cdp.eval(`(() => { const r = ${zebraItem}.getBoundingClientRect(); return r.top >= 0 && r.bottom <= window.innerHeight; })()`),
+    'the new term is scrolled into view');
   await cdp.shot('after-add');
+  // The highlight is only a moment long.
+  await cdp.waitFor('!document.querySelector(".term.flash")', 'the highlight to fade', 6000);
 });
 
 test('adding a duplicate keeps the form open and explains why', { skip }, async () => {
@@ -278,9 +312,94 @@ test('empty fields are caught before any request', { skip }, async () => {
   await cdp.eval("document.querySelector('#editor form').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
 });
 
-test('editing a term updates its explanation', { skip }, async () => {
+test('the header has "+ Add term" on the left and the filter on the right', { skip }, async () => {
   const { cdp } = ctx;
-  const zebra = "[...document.querySelectorAll('.term')].find(t => t.textContent.startsWith('Zebra'))";
+  const boxes = `(() => {
+    const r = (sel) => document.querySelector(sel).getBoundingClientRect();
+    const pick = (b) => ({ left: Math.round(b.left), right: Math.round(b.right), top: Math.round(b.top), width: Math.round(b.width) });
+    return { title: pick(r('h1')), add: pick(r('#add')), filter: pick(r('#filter')), vw: document.documentElement.clientWidth };
+  })()`;
+  await cdp.resize(1600);
+  let b = await cdp.eval(boxes);
+  assert.ok(b.title.right <= b.add.left, `the Add button follows the title ${JSON.stringify(b)}`);
+  assert.ok(b.add.right < b.filter.left, `the Add button is left of the filter ${JSON.stringify(b)}`);
+  assert.ok(b.vw - b.filter.right < 60, `the filter is pushed to the right edge (gap ${b.vw - b.filter.right}px)`);
+  assert.ok(b.add.left < 300, 'the Add button sits at the left');
+  await cdp.shot('header-wide');
+
+  await cdp.resize(400, 800);
+  b = await cdp.eval(boxes);
+  assert.ok(b.add.right <= b.filter.left, `on a phone the Add button is still left of the filter ${JSON.stringify(b)}`);
+  assert.ok(Math.abs(b.add.top - b.filter.top) < 20, 'and they share one row');
+  assert.ok(b.filter.width >= 100, 'the filter keeps a usable width');
+  assert.ok(await cdp.eval(noOverflowScript));
+  await cdp.shot('header-narrow');
+  await cdp.resize(1600);
+});
+
+test('coming back to the page folds everything, but never discards unsaved text', { skip }, async () => {
+  const { cdp } = ctx;
+  const comeBack = () => cdp.eval("document.dispatchEvent(new Event('visibilitychange'))");
+
+  // Two terms open, then the tab is shown again.
+  await cdp.eval("document.querySelectorAll('.term-btn')[0].click(); document.querySelectorAll('.term-btn')[1].click();");
+  assert.equal(await cdp.eval(openCount), 2);
+  await comeBack();
+  assert.equal(await cdp.eval(openCount), 0, 'visibilitychange folds everything');
+  assert.equal(await cdp.eval("document.querySelectorAll('.def:not([hidden])').length"), 0);
+
+  // Restored from the browser's back/forward cache.
+  await cdp.eval("document.querySelectorAll('.term-btn')[2].click()");
+  await cdp.eval("window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))");
+  assert.equal(await cdp.eval(openCount), 0, 'a page restored from cache folds everything');
+
+  // A normal pageshow (fresh load) must not do anything surprising.
+  await cdp.eval("document.querySelectorAll('.term-btn')[2].click()");
+  await cdp.eval("window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false }))");
+  assert.equal(await cdp.eval(openCount), 1);
+  await cdp.eval("document.querySelectorAll('.term-btn')[2].click()");
+
+  // An empty add form is tidied away; one with typed text is kept, text intact.
+  await cdp.eval("document.getElementById('add').click()");
+  assert.equal(await cdp.eval("document.getElementById('editor').hidden"), false);
+  await comeBack();
+  assert.equal(await cdp.eval("document.getElementById('editor').hidden"), true, 'an untouched form is closed');
+  await cdp.eval("document.getElementById('add').click()");
+  await cdp.eval("document.querySelector('#editor form').term.value = 'Half typed'");
+  await comeBack();
+  assert.equal(await cdp.eval("document.getElementById('editor').hidden"), false, 'a form with text stays');
+  assert.equal(await cdp.eval("document.querySelector('#editor form').term.value"), 'Half typed');
+  await cdp.eval("document.querySelector('#editor form').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+
+  // An edit with unsaved changes stays open; an untouched edit form is closed.
+  await cdp.eval("document.querySelector('.term-btn').click(); document.querySelector('.term [data-act=edit]').click();");
+  assert.ok(await cdp.eval("!!document.querySelector('.term form')"));
+  await comeBack();
+  assert.equal(await cdp.eval("!!document.querySelector('.term form')"), false, 'an untouched edit form is closed');
+  await cdp.eval("document.querySelector('.term-btn').click(); document.querySelector('.term [data-act=edit]').click();");
+  await cdp.eval("document.querySelector('.term form').definition.value = 'unsaved change'");
+  await comeBack();
+  assert.equal(await cdp.eval("document.querySelector('.term form').definition.value"), 'unsaved change', 'unsaved edit is kept');
+  assert.equal(await cdp.eval("document.querySelector('.term form').closest('.def').hidden"), false, 'and stays visible');
+  await cdp.eval("document.querySelector('.term form').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+  await comeBack();
+  assert.equal(await cdp.eval(openCount), 0);
+});
+
+test('reopening the page starts with everything folded', { skip }, async () => {
+  const { cdp } = ctx;
+  await cdp.eval("document.querySelectorAll('.term-btn')[4].click()");
+  assert.equal(await cdp.eval(openCount), 1);
+  await cdp.send('Page.reload');
+  await cdp.waitFor("document.querySelectorAll('.term-btn').length > 0", 'the list after reload');
+  assert.equal(await cdp.eval(openCount), 0);
+  assert.equal(await cdp.eval("document.querySelectorAll('.def:not([hidden])').length"), 0);
+});
+
+test('editing a term updates its explanation and leaves everything folded', { skip }, async () => {
+  const { cdp } = ctx;
+  const zebra = zebraItem;
+  await cdp.eval(`${zebra}.querySelector('.term-btn').click()`);
   await cdp.eval(`${zebra}.querySelector('[data-act=edit]').click()`);
   await cdp.waitFor(`${zebra}.querySelector('form')`, 'edit form');
   await cdp.eval(`(() => {
@@ -290,11 +409,15 @@ test('editing a term updates its explanation', { skip }, async () => {
   })()`);
   await cdp.waitFor(`${zebra}.querySelector('.text') && ${zebra}.querySelector('.text').textContent === 'Edited explanation'`, 'edited text');
   assert.equal(ctx.store.list().find((t) => t.term.startsWith('Zebra')).definition, 'Edited explanation');
+  assert.equal(await cdp.eval(`${zebra}.querySelector('.term-btn').getAttribute('aria-expanded')`), 'false', 'folded after saving');
+  assert.equal(await cdp.eval(openCount), 0);
+  assert.ok(await cdp.eval(`${zebra}.classList.contains('flash')`), 'briefly highlighted');
 });
 
 test('deleting needs the admin key', { skip }, async () => {
   const { cdp } = ctx;
-  const zebra = "[...document.querySelectorAll('.term')].find(t => t.textContent.startsWith('Zebra'))";
+  const zebra = zebraItem;
+  await cdp.eval(`${zebra}.querySelector('.term-btn').click()`);
   await cdp.eval(`${zebra}.querySelector('[data-act=edit]').click()`);
   await cdp.waitFor(`${zebra}.querySelector('form')`, 'edit form');
   await cdp.eval(`${zebra}.querySelector('.danger-outline').click()`);

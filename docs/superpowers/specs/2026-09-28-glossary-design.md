@@ -87,8 +87,10 @@ Validation and limits:
 
 - Fixed dark theme, `color-scheme: dark`, system font stack, no animations,
   no images. Body text stays comfortably readable (about 16 px).
-- **Header row:** a filter box (instant, matches term and explanation) and an
-  **Add term** button.
+- **Header row:** the title and the **+ Add term** button on the left, the term
+  count and a filter box (instant, matches term and explanation) pushed to the
+  right. On a phone-width tab the title and count are hidden so the button and
+  the filter share one row.
 - **Overview:** one alphabetical list of all terms (locale-aware sort) with
   small letter dividers. Terms starting with a non-letter go under `#`.
 - **Uses the full width on desktop:** the list is laid out in CSS columns
@@ -101,6 +103,12 @@ Validation and limits:
   expands the explanation directly below it, inside the same column. Clicking
   again collapses it. More than one term can be open at once. Because columns
   reflow when a term expands, the clicked term is kept in view.
+- **Always clean:** a fresh load starts fully folded. After adding or editing a
+  term everything is folded (nothing stays open), and the added or changed term
+  is scrolled into view and highlighted for about 2.5 seconds. When the page is
+  shown again (tab visible again, or restored from the browser's back/forward
+  cache) everything is folded again. Text the user has typed but not saved is
+  never discarded: a form with changes stays open, an untouched form is closed.
 - **Explanations** are plain text with line breaks preserved. All user text is
   inserted with `textContent`, never as HTML.
 - **Add / edit:** an inline form panel (term and explanation), not a modal.

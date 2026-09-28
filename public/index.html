@@ -41,11 +41,15 @@ button, input, textarea { font: inherit; color: inherit; }
   border-bottom: 1px solid var(--line);
 }
 .bar h1 { margin: 0; font-size: 1.05rem; font-weight: 600; }
-.bar #filter { flex: 1 1 8rem; min-width: 0; max-width: 34rem; }
+/* Title and "+ Add term" sit on the left; the filter is pushed to the right. */
+.tools { display: flex; align-items: center; justify-content: flex-end; gap: .75rem; flex: 1 1 auto; min-width: 0; }
+.tools #filter { flex: 0 1 20rem; min-width: 0; }
 .count { color: var(--muted); font-size: .875rem; white-space: nowrap; }
-.bar #add { margin-left: auto; }
 /* The tab already carries the title in Teams; give the space to the filter. */
-@media (max-width: 34rem) { .bar h1 { display: none; } }
+@media (max-width: 34rem) {
+  .bar h1 { display: none; }
+  .tools #filter { flex: 1 1 8rem; }
+}
 @media (max-width: 26rem) { .count { display: none; } }
 
 input, textarea {
@@ -138,6 +142,8 @@ textarea { resize: vertical; min-height: 6rem; }
   overflow-wrap: anywhere;
 }
 .term-btn:hover { background: var(--panel); }
+/* A moment of highlight on the term that was just added or changed. */
+.term.flash > .term-btn { background: var(--panel); color: var(--accent); }
 .chev {
   flex: none;
   width: .5rem;
@@ -169,9 +175,11 @@ textarea { resize: vertical; min-height: 6rem; }
 <body>
 <header class="bar">
   <h1>AZB-Glossar</h1>
-  <input id="filter" type="search" placeholder="Filter terms…" aria-label="Filter terms" autocomplete="off">
-  <span id="count" class="count" aria-live="polite"></span>
   <button id="add" class="btn primary" type="button">+ Add term</button>
+  <div class="tools">
+    <span id="count" class="count" aria-live="polite"></span>
+    <input id="filter" type="search" placeholder="Filter terms…" aria-label="Filter terms" autocomplete="off">
+  </div>
 </header>
 <main>
   <section id="editor" hidden></section>
@@ -338,6 +346,32 @@ textarea { resize: vertical; min-height: 6rem; }
     if (item) item.scrollIntoView({ block: 'nearest' });
   }
 
+  // Marks the term that was just added or changed for a moment, so it is easy
+  // to find in the folded list.
+  var flashTimer;
+  function flash(id) {
+    var item = itemFor(id);
+    if (!item) return;
+    listEl.querySelectorAll('.term.flash').forEach(function (n) { n.classList.remove('flash'); });
+    item.classList.add('flash');
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(function () { item.classList.remove('flash'); }, 2500);
+  }
+
+  // Back to the clean, folded state. Anything the user has typed but not saved
+  // is left alone; forms that were opened but not touched are tidied away.
+  function resetView() {
+    expanded.clear();
+    if (addForm && !addForm.isDirty()) closeAdd();
+    if (editForm && !editForm.isDirty()) closeEdit();
+    listEl.querySelectorAll('.term-btn[aria-expanded="true"]').forEach(function (btn) {
+      var item = btn.closest('.term');
+      if (item.dataset.id === editingId) return; // an unsaved edit stays open
+      btn.setAttribute('aria-expanded', 'false');
+      item.querySelector('.def').hidden = true;
+    });
+  }
+
   // ---- reading -------------------------------------------------------------
   listEl.addEventListener('click', function (e) {
     var item = e.target.closest('.term');
@@ -399,7 +433,10 @@ textarea { resize: vertical; min-height: 6rem; }
     form.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') { e.preventDefault(); opts.onCancel(); }
     });
+    var startTerm = termInput.value;
+    var startDefinition = defInput.value;
     form.termInput = termInput;
+    form.isDirty = function () { return termInput.value !== startTerm || defInput.value !== startDefinition; };
     form.showError = function (text) { msg.textContent = text; };
     form.setBusy = function (busy) {
       form.querySelectorAll('button, input, textarea').forEach(function (n) { n.disabled = busy; });
@@ -443,9 +480,10 @@ textarea { resize: vertical; min-height: 6rem; }
       filterEl.value = '';
       terms = prepare(terms.concat([created]));
       lastSnapshot = '';
-      expanded.add(created.id);
+      expanded.clear();
       render();
       reveal(created.id);
+      flash(created.id);
     });
   }
 
@@ -484,9 +522,10 @@ textarea { resize: vertical; min-height: 6rem; }
       editForm = null;
       terms = prepare(terms.map(function (t) { return t.id === id ? updated : t; }));
       lastSnapshot = '';
-      expanded.add(id);
+      expanded.clear();
       render();
       reveal(id);
+      flash(id);
     });
   }
 
@@ -517,7 +556,18 @@ textarea { resize: vertical; min-height: 6rem; }
   function refresh() {
     if (!document.hidden && Date.now() - lastLoad > 5000) load();
   }
-  document.addEventListener('visibilitychange', refresh);
+  // Coming back to the page (switching tabs, or the browser restoring it from
+  // its back/forward cache) starts from a clean, folded list.
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) return;
+    resetView();
+    refresh();
+  });
+  window.addEventListener('pageshow', function (e) {
+    if (!e.persisted) return;
+    resetView();
+    refresh();
+  });
   window.addEventListener('focus', refresh);
 
   // ---- Microsoft Teams -----------------------------------------------------
