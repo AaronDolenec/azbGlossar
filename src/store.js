@@ -144,6 +144,11 @@ class Store {
     });
   }
 
+  // Resolves once every queued write has finished (used on shutdown).
+  flush() {
+    return this._queue;
+  }
+
   // All mutations run one at a time, so each sees the result of the previous
   // one. A failed mutation rejects its own caller but never blocks the queue.
   _enqueue(fn) {
